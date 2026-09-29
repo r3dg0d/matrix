@@ -1,0 +1,7 @@
+# Example — also installed to ~/.config/matrix/config.example.toml
+speed = 1.0
+density = 0.75
+fps = 30
+color = "matrix"
+charset = "classic"
+trail = 0.55

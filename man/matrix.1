@@ -1,0 +1,83 @@
+.TH MATRIX 1 "September 2026" "matrix 0.1.0" "User Commands"
+.SH NAME
+matrix \- realtime Matrix-style digital rain for the terminal
+.SH SYNOPSIS
+.B matrix
+[\fIOPTIONS\fR]
+.br
+.B matrix completions
+\fISHELL\fR
+.SH DESCRIPTION
+.B matrix
+renders a polished Matrix-style digital rain animation in the terminal
+using an alternate screen buffer. The cursor is hidden and the terminal
+is restored on quit, Ctrl+C, or panic.
+.SH OPTIONS
+.TP
+\fB\-s\fR, \fB\-\-speed\fR \fIFACTOR\fR
+Fall speed multiplier (0.05–8).
+.TP
+\fB\-d\fR, \fB\-\-density\fR \fIFRAC\fR
+Column density as a fraction of terminal width (0.05–1).
+.TP
+\fB\-f\fR, \fB\-\-fps\fR \fIN\fR
+Frame rate cap.
+.TP
+\fB\-c\fR, \fB\-\-color\fR \fINAME\fR
+Palette: matrix, amber, cyberblue, red, purple, mono.
+.TP
+\fB\-p\fR, \fB\-\-preset\fR \fINAME\fR
+Named preset: hacker, screensaver, dense, sparse, slow, hyperspeed, nixos.
+.TP
+\fB\-\-charset\fR \fINAME\fR
+Glyph set: classic, ascii, binary, hex, katakana, nix.
+.TP
+\fB\-\-chars\fR \fISTRING\fR
+Custom glyphs (overrides --charset).
+.TP
+\fB\-\-trail\fR \fIFRAC\fR
+Trail length factor (0.1–1).
+.TP
+\fB\-\-truecolor\fR [\fIBOOL\fR]
+Force truecolor on or off.
+.TP
+\fB\-\-list\-presets\fR, \fB\-\-list\-charsets\fR, \fB\-\-list\-palettes\fR
+List options and exit.
+.TP
+\fB\-h\fR, \fB\-\-help\fR
+Show help.
+.TP
+\fB\-V\fR, \fB\-\-version\fR
+Show version.
+.SH KEYS
+.TP
+q / Ctrl+C
+Quit.
+.TP
+space
+Pause / resume.
+.TP
++ / \-
+Speed.
+.TP
+] / [
+Density.
+.TP
+c
+Cycle palette.
+.TP
+p
+Cycle preset.
+.TP
+? / h
+Toggle help overlay.
+.SH FILES
+.TP
+\fI~/.config/matrix/config.toml\fR
+User configuration (TOML).
+.SH SEE ALSO
+Project README and flake.nix for Nix packaging.
+.SH AUTHOR
+Vincent (neo) / r3dg0d
+.SH LICENSE
+MIT

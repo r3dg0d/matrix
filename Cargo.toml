@@ -1,0 +1,33 @@
+[package]
+name = "matrix"
+version = "0.1.0"
+edition = "2021"
+description = "Realtime Matrix-style digital rain for the terminal"
+authors = ["Vincent <neo@zionsec>"]
+license = "MIT"
+readme = "README.md"
+repository = "https://github.com/r3dg0d/matrix"
+keywords = ["matrix", "rain", "terminal", "crossterm", "screensaver"]
+categories = ["command-line-utilities"]
+exclude = ["target/"]
+
+[[bin]]
+name = "matrix"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive", "env", "wrap_help", "color"] }
+clap_complete = "4"
+crossterm = "0.28"
+ctrlc = "3"
+dirs = "5"
+rand = "0.8"
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
+opt-level = 3
