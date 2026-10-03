@@ -75,7 +75,7 @@ XDG path: `~/.config/matrix/config.toml`
 
 An example is written on first run (`config.example.toml` + seeded `config.toml`).
 
-CLI flags override config. Preset (if set) applies first, then individual knobs.
+CLI flags override config. Within each layer a preset applies first, then individual knobs. A `--preset` on the command line replaces the whole bundle, including knobs in `config.toml`; pass another flag (for example `--speed`) to override one field of that preset.
 
 ## Completions
 

@@ -12,7 +12,7 @@ mod renderer;
 use charset::CharsetId;
 use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
 use clap_complete::{generate, Shell};
-use config::{FileConfig, Settings};
+use config::{resolve_settings, CliOverrides, FileConfig};
 use palette::PaletteId;
 use presets::PresetId;
 use std::io;
@@ -159,77 +159,20 @@ fn real_main() -> anyhow::Result<()> {
     // Ensure example + default config exist (non-fatal).
     let _ = FileConfig::ensure_example();
     let file_cfg = FileConfig::load().unwrap_or_default();
-
-    let mut settings = Settings::default();
-
-    // Preset first (file then CLI), then overlay individual knobs.
-    if let Some(p) = file_cfg.resolved_preset() {
-        apply_preset_settings(&mut settings, p);
-    }
-    if let Some(ref name) = cli.preset {
-        let p = PresetId::parse(name)
-            .ok_or_else(|| anyhow::anyhow!("unknown preset '{name}' (try --list-presets)"))?;
-        apply_preset_settings(&mut settings, p);
-    }
-
-    // File config knobs
-    if let Some(v) = file_cfg.speed {
-        settings.speed = v;
-    }
-    if let Some(v) = file_cfg.density {
-        settings.density = v;
-    }
-    if let Some(v) = file_cfg.fps {
-        settings.fps = v;
-    }
-    if let Some(v) = file_cfg.trail {
-        settings.trail = v;
-    }
-    if let Some(p) = file_cfg.resolved_palette() {
-        settings.palette = p;
-    }
-    if let Some(c) = file_cfg.resolved_charset() {
-        settings.charset = c;
-    }
-    if let Some(ref ch) = file_cfg.chars {
-        settings.custom_chars = Some(ch.clone());
-        settings.charset = CharsetId::Custom;
-    }
-    if let Some(v) = file_cfg.truecolor {
-        settings.truecolor = v;
-    }
-
-    // CLI overrides
-    if let Some(v) = cli.speed {
-        settings.speed = v;
-    }
-    if let Some(v) = cli.density {
-        settings.density = v;
-    }
-    if let Some(v) = cli.fps {
-        settings.fps = v;
-    }
-    if let Some(v) = cli.trail {
-        settings.trail = v;
-    }
-    if let Some(ref name) = cli.color {
-        settings.palette = PaletteId::parse(name)
-            .ok_or_else(|| anyhow::anyhow!("unknown palette '{name}' (try --list-palettes)"))?;
-    }
-    if let Some(ref name) = cli.charset {
-        settings.charset = CharsetId::parse(name)
-            .ok_or_else(|| anyhow::anyhow!("unknown charset '{name}' (try --list-charsets)"))?;
-        settings.custom_chars = None;
-    }
-    if let Some(ref ch) = cli.chars {
-        settings.custom_chars = Some(ch.clone());
-        settings.charset = CharsetId::Custom;
-    }
-    if let Some(v) = cli.truecolor {
-        settings.truecolor = v;
-    }
-
-    settings.clamp();
+    let settings = resolve_settings(
+        &file_cfg,
+        &CliOverrides {
+            speed: cli.speed,
+            density: cli.density,
+            fps: cli.fps,
+            color: cli.color.clone(),
+            preset: cli.preset.clone(),
+            charset: cli.charset.clone(),
+            chars: cli.chars.clone(),
+            trail: cli.trail,
+            truecolor: cli.truecolor,
+        },
+    )?;
 
     let running = Arc::new(AtomicBool::new(true));
     let r = running.clone();
@@ -238,16 +181,4 @@ fn real_main() -> anyhow::Result<()> {
     })?;
 
     app::run(settings, running)
-}
-
-fn apply_preset_settings(settings: &mut Settings, preset: PresetId) {
-    let p = preset.apply();
-    settings.preset = Some(preset);
-    settings.speed = p.speed;
-    settings.density = p.density;
-    settings.fps = p.fps;
-    settings.charset = p.charset;
-    settings.palette = p.palette;
-    settings.trail = p.trail;
-    settings.custom_chars = None;
 }
