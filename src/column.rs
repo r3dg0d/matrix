@@ -17,6 +17,9 @@ pub struct Column {
     /// Head y position (float for sub-cell motion).
     pub head: f32,
     pub speed: f32,
+    /// Speed this column was given at creation or the last retune.
+    /// Respawn jitter is applied against this so it cannot random-walk.
+    base_speed: f32,
     pub trail_len: usize,
     pub cells: Vec<Option<Cell>>,
     /// Persistent glyphs so mid-trail characters flicker instead of constantly changing.
@@ -57,6 +60,7 @@ impl Column {
             x,
             head: -(rng.gen_range(0.0..(h as f32 * 0.8))),
             speed,
+            base_speed: speed,
             trail_len,
             cells: vec![None; h],
             glyphs: vec![' '; h],
@@ -113,7 +117,9 @@ impl Column {
 
         if head_y - self.trail_len as i32 > self.height as i32 {
             self.head = offscreen_head(self.height, rng);
-            self.speed *= rng.gen_range(0.85..1.15);
+            // Jitter around the column base. Multiplying the live speed
+            // would random-walk without bound.
+            self.speed = self.base_speed * rng.gen_range(0.85..1.15);
             self.delay = rng.gen_range(0..25);
             self.glyphs.fill(' ');
         }
@@ -195,7 +201,9 @@ impl RainField {
 
     pub fn set_speed(&mut self, speed: f32, rng: &mut impl Rng) {
         for col in &mut self.columns {
-            col.speed = speed * rng.gen_range(0.45..1.55);
+            let tuned = speed * rng.gen_range(0.45..1.55);
+            col.base_speed = tuned;
+            col.speed = tuned;
         }
     }
 
@@ -251,6 +259,46 @@ mod tests {
             assert!(col.height <= 2);
             assert!(col.trail_len >= 1 && col.trail_len <= col.height);
             assert_eq!(col.cells.len(), col.height);
+        }
+    }
+
+    #[test]
+    fn respawn_speed_stays_near_base() {
+        let mut rng = StdRng::seed_from_u64(11);
+        let charset = Charset::from_id(CharsetId::Binary);
+        let mut col = Column::new(0, 10, 1.5, 0.6, &mut rng);
+        let base = col.base_speed;
+        assert!(base > 0.0);
+        assert!((col.speed - base).abs() < f32::EPSILON);
+
+        // A drifted live speed must be pulled back onto the base, not scaled further.
+        for _ in 0..40 {
+            col.speed = base * 8.0;
+            col.head = col.height as f32 + col.trail_len as f32 + 2.0;
+            col.delay = 0;
+            col.update(&charset, &mut rng);
+            let ratio = col.speed / base;
+            assert!(
+                (0.85..1.15).contains(&ratio),
+                "respawn speed ratio {ratio} left the band around base {base}"
+            );
+        }
+
+        let mut field = RainField::new(4, 12, 1.0, 2.0, 0.5, &mut rng);
+        field.set_speed(3.0, &mut rng);
+        for col in &mut field.columns {
+            let base = col.base_speed;
+            assert!((col.speed - base).abs() < f32::EPSILON);
+            assert!((0.45..1.55).contains(&(base / 3.0)));
+            col.speed = base * 20.0;
+            col.head = col.height as f32 + col.trail_len as f32 + 2.0;
+            col.delay = 0;
+            col.update(&charset, &mut rng);
+            let ratio = col.speed / base;
+            assert!(
+                (0.85..1.15).contains(&ratio),
+                "retuned column respawn ratio {ratio} left the band around base {base}"
+            );
         }
     }
 }
