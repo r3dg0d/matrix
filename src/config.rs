@@ -3,8 +3,9 @@
 use crate::charset::CharsetId;
 use crate::palette::PaletteId;
 use crate::presets::PresetId;
+use anyhow::Context;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(default)]
@@ -36,12 +37,20 @@ impl FileConfig {
     }
 
     pub fn load() -> anyhow::Result<Self> {
-        let path = Self::config_path();
+        Self::load_from(Self::config_path())
+    }
+
+    /// Load `path`. A missing file is the first-run case and uses defaults.
+    /// A file that exists but cannot be read or parsed is an error.
+    pub fn load_from(path: impl AsRef<Path>) -> anyhow::Result<Self> {
+        let path = path.as_ref();
         if !path.exists() {
             return Ok(Self::default());
         }
-        let text = std::fs::read_to_string(&path)?;
-        let cfg: FileConfig = toml::from_str(&text)?;
+        let text = std::fs::read_to_string(path)
+            .with_context(|| format!("failed to read {}", path.display()))?;
+        let cfg: FileConfig =
+            toml::from_str(&text).with_context(|| format!("failed to parse {}", path.display()))?;
         Ok(cfg)
     }
 
@@ -93,12 +102,26 @@ trail = 0.55
         Ok(())
     }
 
-    pub fn resolved_palette(&self) -> Option<PaletteId> {
-        self.color.as_deref().and_then(PaletteId::parse)
+    /// `Ok(None)` when the file omits `color`. An unknown name is an error,
+    /// same as `--color`.
+    pub fn resolved_palette(&self) -> anyhow::Result<Option<PaletteId>> {
+        match self.color.as_deref() {
+            None => Ok(None),
+            Some(name) => PaletteId::parse(name)
+                .map(Some)
+                .ok_or_else(|| anyhow::anyhow!("unknown palette '{name}' (try --list-palettes)")),
+        }
     }
 
-    pub fn resolved_charset(&self) -> Option<CharsetId> {
-        self.charset.as_deref().and_then(CharsetId::parse)
+    /// `Ok(None)` when the file omits `charset`. An unknown name is an error,
+    /// same as `--charset`.
+    pub fn resolved_charset(&self) -> anyhow::Result<Option<CharsetId>> {
+        match self.charset.as_deref() {
+            None => Ok(None),
+            Some(name) => CharsetId::parse(name)
+                .map(Some)
+                .ok_or_else(|| anyhow::anyhow!("unknown charset '{name}' (try --list-charsets)")),
+        }
     }
 
     pub fn resolved_preset(&self) -> Option<PresetId> {
@@ -132,7 +155,7 @@ pub fn resolve_settings(file_cfg: &FileConfig, cli: &CliOverrides) -> anyhow::Re
     if let Some(p) = file_cfg.resolved_preset() {
         apply_preset_settings(&mut settings, p);
     }
-    apply_file_knobs(&mut settings, file_cfg);
+    apply_file_knobs(&mut settings, file_cfg)?;
 
     if let Some(ref name) = cli.preset {
         let p = PresetId::parse(name)
@@ -157,7 +180,7 @@ fn apply_preset_settings(settings: &mut Settings, preset: PresetId) {
     settings.custom_chars = None;
 }
 
-fn apply_file_knobs(settings: &mut Settings, file_cfg: &FileConfig) {
+fn apply_file_knobs(settings: &mut Settings, file_cfg: &FileConfig) -> anyhow::Result<()> {
     if let Some(v) = file_cfg.speed {
         settings.speed = v;
     }
@@ -170,10 +193,10 @@ fn apply_file_knobs(settings: &mut Settings, file_cfg: &FileConfig) {
     if let Some(v) = file_cfg.trail {
         settings.trail = v;
     }
-    if let Some(p) = file_cfg.resolved_palette() {
+    if let Some(p) = file_cfg.resolved_palette()? {
         settings.palette = p;
     }
-    if let Some(c) = file_cfg.resolved_charset() {
+    if let Some(c) = file_cfg.resolved_charset()? {
         settings.charset = c;
     }
     if let Some(ref ch) = file_cfg.chars {
@@ -183,6 +206,7 @@ fn apply_file_knobs(settings: &mut Settings, file_cfg: &FileConfig) {
     if let Some(v) = file_cfg.truecolor {
         settings.truecolor = v;
     }
+    Ok(())
 }
 
 fn apply_cli_knobs(settings: &mut Settings, cli: &CliOverrides) -> anyhow::Result<()> {
@@ -282,8 +306,8 @@ mod tests {
         let cfg: FileConfig = toml::from_str(FileConfig::example_toml()).unwrap();
         assert_eq!(cfg.speed, Some(1.0));
         assert_eq!(cfg.color.as_deref(), Some("matrix"));
-        assert_eq!(cfg.resolved_palette(), Some(PaletteId::Matrix));
-        assert_eq!(cfg.resolved_charset(), Some(CharsetId::Classic));
+        assert_eq!(cfg.resolved_palette().unwrap(), Some(PaletteId::Matrix));
+        assert_eq!(cfg.resolved_charset().unwrap(), Some(CharsetId::Classic));
     }
 
     #[test]
@@ -368,6 +392,77 @@ mod tests {
         };
         let err = resolve_settings(&FileConfig::default(), &cli).unwrap_err();
         assert!(err.to_string().contains("unknown preset"));
+    }
+
+    #[test]
+    fn missing_config_file_uses_defaults() {
+        let path =
+            std::env::temp_dir().join(format!("matrix-missing-config-{}.toml", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        assert!(!path.exists());
+        let cfg = FileConfig::load_from(&path).unwrap();
+        assert!(cfg.speed.is_none());
+        assert!(cfg.color.is_none());
+        assert!(cfg.charset.is_none());
+        assert!(cfg.preset.is_none());
+        assert!(cfg.chars.is_none());
+    }
+
+    #[test]
+    fn broken_config_file_is_an_error() {
+        let path =
+            std::env::temp_dir().join(format!("matrix-broken-config-{}.toml", std::process::id()));
+        std::fs::write(&path, "speed = [\n").unwrap();
+        let err = FileConfig::load_from(&path).unwrap_err();
+        let msg = format!("{err:#}");
+        assert!(msg.contains("failed to parse"), "{msg}");
+        assert!(msg.contains(&path.display().to_string()), "{msg}");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn valid_config_file_loads() {
+        let path =
+            std::env::temp_dir().join(format!("matrix-valid-config-{}.toml", std::process::id()));
+        std::fs::write(&path, "color = \"amber\"\ncharset = \"hex\"\n").unwrap();
+        let cfg = FileConfig::load_from(&path).unwrap();
+        assert_eq!(cfg.resolved_palette().unwrap(), Some(PaletteId::Amber));
+        assert_eq!(cfg.resolved_charset().unwrap(), Some(CharsetId::Hex));
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn unknown_file_palette_errors() {
+        let file = FileConfig {
+            color: Some("chartreuse".into()),
+            ..FileConfig::default()
+        };
+        let err = file.resolved_palette().unwrap_err();
+        assert!(err.to_string().contains("unknown palette 'chartreuse'"));
+        let err = resolve_settings(&file, &CliOverrides::default()).unwrap_err();
+        assert!(err.to_string().contains("unknown palette 'chartreuse'"));
+    }
+
+    #[test]
+    fn unknown_file_charset_errors() {
+        let file = FileConfig {
+            charset: Some("emoji".into()),
+            ..FileConfig::default()
+        };
+        let err = file.resolved_charset().unwrap_err();
+        assert!(err.to_string().contains("unknown charset 'emoji'"));
+        let err = resolve_settings(&file, &CliOverrides::default()).unwrap_err();
+        assert!(err.to_string().contains("unknown charset 'emoji'"));
+    }
+
+    #[test]
+    fn omitted_file_palette_and_charset_stay_default() {
+        let bare = FileConfig::default();
+        assert!(bare.resolved_palette().unwrap().is_none());
+        assert!(bare.resolved_charset().unwrap().is_none());
+        let s = resolve_settings(&bare, &CliOverrides::default()).unwrap();
+        assert_eq!(s.palette, PaletteId::Matrix);
+        assert_eq!(s.charset, CharsetId::Classic);
     }
 
     #[test]

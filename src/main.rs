@@ -158,7 +158,7 @@ fn real_main() -> anyhow::Result<()> {
 
     // Ensure example + default config exist (non-fatal).
     let _ = FileConfig::ensure_example();
-    let file_cfg = FileConfig::load().unwrap_or_default();
+    let file_cfg = FileConfig::load()?;
     let settings = resolve_settings(
         &file_cfg,
         &CliOverrides {
