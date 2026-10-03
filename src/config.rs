@@ -124,8 +124,15 @@ trail = 0.55
         }
     }
 
-    pub fn resolved_preset(&self) -> Option<PresetId> {
-        self.preset.as_deref().and_then(PresetId::parse)
+    /// `Ok(None)` when the file omits `preset`. An unknown name is an error,
+    /// same as `--preset`.
+    pub fn resolved_preset(&self) -> anyhow::Result<Option<PresetId>> {
+        match self.preset.as_deref() {
+            None => Ok(None),
+            Some(name) => PresetId::parse(name)
+                .map(Some)
+                .ok_or_else(|| anyhow::anyhow!("unknown preset '{name}' (try --list-presets)")),
+        }
     }
 }
 
@@ -152,7 +159,7 @@ pub struct CliOverrides {
 pub fn resolve_settings(file_cfg: &FileConfig, cli: &CliOverrides) -> anyhow::Result<Settings> {
     let mut settings = Settings::default();
 
-    if let Some(p) = file_cfg.resolved_preset() {
+    if let Some(p) = file_cfg.resolved_preset()? {
         apply_preset_settings(&mut settings, p);
     }
     apply_file_knobs(&mut settings, file_cfg)?;
@@ -391,7 +398,34 @@ mod tests {
             ..CliOverrides::default()
         };
         let err = resolve_settings(&FileConfig::default(), &cli).unwrap_err();
-        assert!(err.to_string().contains("unknown preset"));
+        assert!(err.to_string().contains("unknown preset 'nope'"));
+        assert!(err.to_string().contains("try --list-presets"));
+    }
+
+    #[test]
+    fn unknown_file_preset_errors() {
+        let file = FileConfig {
+            preset: Some("nope".into()),
+            ..FileConfig::default()
+        };
+        let err = file.resolved_preset().unwrap_err();
+        assert!(err.to_string().contains("unknown preset 'nope'"));
+        assert!(err.to_string().contains("try --list-presets"));
+        let err = resolve_settings(&file, &CliOverrides::default()).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("unknown preset 'nope'"), "{msg}");
+        assert!(msg.contains("try --list-presets"), "{msg}");
+    }
+
+    #[test]
+    fn omitted_file_preset_stays_default() {
+        let bare = FileConfig::default();
+        assert!(bare.resolved_preset().unwrap().is_none());
+        let s = resolve_settings(&bare, &CliOverrides::default()).unwrap();
+        assert!(s.preset.is_none());
+        assert_eq!(s.speed, Settings::default().speed);
+        assert_eq!(s.palette, PaletteId::Matrix);
+        assert_eq!(s.charset, CharsetId::Classic);
     }
 
     #[test]
